@@ -1,164 +1,176 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <title>ピーキング戦略（大会当日・完全版）</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>当日ピーキングツール</title>
   <style>
-    body {
-      font-family: sans-serif;
-      background: #f4f4f4;
-      padding: 20px;
-      margin: 0;
-    }
-    .container {
-      background: #fff;
-      padding: 20px;
-      border-radius: 10px;
-      max-width: 900px;
-      margin: auto;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    label {
-      display: block;
-      margin-top: 10px;
-      font-weight: bold;
-    }
-    input, select {
-      width: 100%;
-      padding: 8px;
-      margin-top: 5px;
-      box-sizing: border-box;
-    }
-    button {
-      margin-top: 20px;
-      padding: 10px;
-      font-size: 1em;
-      background: #4CAF50;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      width: 100%;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 6px;
-      text-align: center;
-      word-break: break-word;
-    }
-    th {
-      background-color: #eee;
-    }
-    .error {
-      border: 2px solid red;
-    }
-    @media print {
-      button { display: none; }
-      body { -webkit-print-color-adjust: exact; }
-    }
+    body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
+    .container { max-width: 700px; background: white; margin: auto; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    label, select, input { display: block; width: 100%; margin-bottom: 10px; font-size: 1rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; overflow-x: auto; display: block; }
+    th, td { border: 1px solid #ccc; padding: 10px; text-align: center; }
+    th { background: #eee; }
+    button { background: #007bff; color: white; padding: 10px; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-size: 1.1rem; }
   </style>
 </head>
-<body>
+<body onload="loadFromStorage()">
 <div class="container">
-  <h1>ピーキング戦略（大会当日・完全版）</h1>
+  <h2>当日ピーキング計算ツール</h2>
 
-  <label>体重（kg）</label>
-  <input id="weight" type="number" placeholder="例：70" />
+  <label>体重（kg）<input type="number" id="weight"></label>
+  <label>たんぱく質（g）<input type="number" id="protein"></label>
+  <label>脂質（g）<input type="number" id="fat"></label>
+  <label>炭水化物（g）<input type="number" id="carbs"></label>
+  <label>水分量（L）<input type="number" id="water"></label>
+  <label>塩分量（g）<input type="number" id="salt"></label>
 
-  <label>体脂肪率（％）</label>
-  <input id="bodyfat" type="number" placeholder="例：10" />
+  <label>起床時間（例: 06:00）<input type="time" id="wakeTime"></label>
+  <label>ステージ数
+    <select id="stageCount" onchange="toggleStageInputs()">
+      <option value="1">1ステージ</option>
+      <option value="2">2ステージ</option>
+      <option value="3">3ステージ</option>
+    </select>
+  </label>
+  <label id="stage1Label">ステージ1時間<input type="time" id="stage1"></label>
+  <label id="stage2Label" style="display:none">ステージ2時間<input type="time" id="stage2"></label>
+  <label id="stage3Label" style="display:none">ステージ3時間<input type="time" id="stage3"></label>
 
-  <label>TDEE（1日の消費カロリー）</label>
-  <input id="tdee" type="number" placeholder="例：2400" />
+  <label>水抜き・塩抜き
+    <select id="cutting">
+      <option value="none">しない</option>
+      <option value="mild">軽くする</option>
+      <option value="hard">強くする</option>
+    </select>
+  </label>
 
-  <label>水分感受性</label>
-  <select id="waterSensitivity">
-    <option value="low">低（多め）</option>
-    <option value="medium" selected>中</option>
-    <option value="high">高（少なめ）</option>
-  </select>
+  <button onclick="calculate()">スケジュールを作成する</button>
 
-  <label>塩分感受性</label>
-  <select id="saltSensitivity">
-    <option value="low">低（多め）</option>
-    <option value="medium" selected>中</option>
-    <option value="high">高（少なめ）</option>
-  </select>
-
-  <button onclick="generateSchedule()">PFCと水分・塩分を計算</button>
-
-  <div id="output"></div>
+  <div id="scheduleContainer"></div>
 </div>
 
 <script>
-function generateSchedule() {
-  const ids = ["weight", "bodyfat", "tdee"];
-  let valid = true;
-  ids.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el.value) {
-      el.classList.add("error");
-      valid = false;
-    } else {
-      el.classList.remove("error");
-    }
+function toggleStageInputs() {
+  const count = parseInt(document.getElementById('stageCount').value);
+  document.getElementById('stage2Label').style.display = count >= 2 ? 'block' : 'none';
+  document.getElementById('stage3Label').style.display = count === 3 ? 'block' : 'none';
+}
+
+function timeToMinutes(t) {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+function minutesToTime(m) {
+  const h = String(Math.floor(m / 60)).padStart(2, '0');
+  const min = String(m % 60).padStart(2, '0');
+  return `${h}:${min}`;
+}
+function getConditionFactors(jpCond) {
+  const condMap = {
+    '張りがない': [1.25, 1.1, 0.5],
+    '乾いている': [1.15, 1.1, -0.2],
+    '理想的': [0.9, 0.9, -0.5],
+    'むくんでいる': [0.8, 0.8, -1.0],
+    'そのまま': [1, 1, 0]
+  };
+  return condMap[jpCond] || [1, 1, 0];
+}
+
+function saveToStorage() {
+  const keys = ['weight', 'protein', 'fat', 'carbs', 'water', 'salt', 'wakeTime', 'stageCount', 'stage1', 'stage2', 'stage3', 'cutting'];
+  keys.forEach(k => localStorage.setItem(k, document.getElementById(k)?.value || ''));
+}
+
+function loadFromStorage() {
+  const keys = ['weight', 'protein', 'fat', 'carbs', 'water', 'salt', 'wakeTime', 'stageCount', 'stage1', 'stage2', 'stage3', 'cutting'];
+  keys.forEach(k => {
+    if (localStorage.getItem(k)) document.getElementById(k).value = localStorage.getItem(k);
   });
-  if (!valid) {
-    alert("体重・体脂肪率・TDEE を入力してください。");
-    return;
+  toggleStageInputs();
+}
+
+function calculate() {
+  saveToStorage();
+
+  const weight = parseFloat(document.getElementById('weight').value);
+  const protein = parseFloat(document.getElementById('protein').value);
+  const fat = parseFloat(document.getElementById('fat').value);
+  const carbs = parseFloat(document.getElementById('carbs').value);
+  const baseWater = parseFloat(document.getElementById('water').value);
+  const baseSalt = parseFloat(document.getElementById('salt').value);
+  const wake = document.getElementById('wakeTime').value;
+  const cutting = document.getElementById('cutting').value;
+  const stageCount = parseInt(document.getElementById('stageCount').value);
+  const stageTimes = [];
+  for (let i = 1; i <= stageCount; i++) stageTimes.push(document.getElementById(`stage${i}`).value);
+
+  const wakeMins = timeToMinutes(wake);
+  const firstStage = timeToMinutes(stageTimes[0]);
+  const duration = firstStage - wakeMins;
+  const meals = duration >= 300 ? 5 : duration >= 180 ? 4 : 3;
+  const gap = Math.floor(duration / meals);
+
+  const scheduleContainer = document.getElementById("scheduleContainer");
+  scheduleContainer.innerHTML = "";
+
+  const table = document.createElement("table");
+  table.innerHTML = "<thead><tr><th>時間</th><th>内容</th><th>PFC</th><th>水</th><th>塩</th><th>質感</th></tr></thead>";
+  const tbody = document.createElement("tbody");
+
+  for (let i = 0; i < meals; i++) {
+    const t = minutesToTime(wakeMins + i * gap);
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${t}</td><td>食事${i + 1}</td>
+      <td id="pfc${i}"></td><td id="water${i}"></td><td id="salt${i}"></td>
+      <td><select onchange="applyAdjustment(${i})">
+        <option selected>そのまま</option>
+        <option>張りがない</option>
+        <option>乾いている</option>
+        <option>理想的</option>
+        <option>むくんでいる</option>
+      </select></td>`;
+    tbody.appendChild(row);
   }
 
-  const weight = parseFloat(document.getElementById("weight").value);
-  const bodyfat = parseFloat(document.getElementById("bodyfat").value);
-  const tdee = parseFloat(document.getElementById("tdee").value);
-  const leanMass = weight * (1 - bodyfat / 100);
-  const protein = Math.round(leanMass * 2.3);
-  const fat = 30;
-  const proteinKcal = protein * 4;
-  const fatKcal = fat * 9;
-  const carbKcal = tdee - proteinKcal - fatKcal;
-  const carb = Math.round(carbKcal / 4);
+  // ステージ前補食（30分前）
+  for (let i = 0; i < stageCount; i++) {
+    const stageMins = timeToMinutes(stageTimes[i]);
+    const t = minutesToTime(stageMins - 30);
+    const c = Math.round(weight * 0.5);
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${t}</td><td>ステージ${i + 1}前補食</td><td>P:0 F:0 C:${c}</td><td>0.2L</td><td>0.2g</td><td>固定</td>`;
+    tbody.appendChild(row);
+  }
 
-  const waterBase = Math.max(weight * 0.05, 1.5);
-  const saltBase = Math.max(weight * 0.1, 2);
+  table.appendChild(tbody);
+  scheduleContainer.appendChild(table);
 
-  const waterSens = document.getElementById("waterSensitivity").value;
-  const saltSens = document.getElementById("saltSensitivity").value;
-  const adjust = (val, sens) => {
-    const factor = { low: 1.2, medium: 1.0, high: 0.8 };
-    return (val * factor[sens]).toFixed(1);
-  };
+  for (let i = 0; i < meals; i++) applyAdjustment(i);
+}
 
-  const water = adjust(waterBase, waterSens);
-  const salt = Math.round(adjust(saltBase, saltSens));
+function applyAdjustment(index) {
+  const carbs = parseFloat(document.getElementById('carbs').value);
+  const water = parseFloat(document.getElementById('water').value);
+  const salt = parseFloat(document.getElementById('salt').value);
+  const protein = parseFloat(document.getElementById('protein').value);
+  const fat = parseFloat(document.getElementById('fat').value);
 
-  const output = document.getElementById("output");
-  output.innerHTML = `
-    <table>
-      <thead>
-        <tr><th>摂取カロリー</th><th>たんぱく質</th><th>脂質</th><th>炭水化物</th><th>水分</th><th>塩分</th><th>備考</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>${tdee} kcal</td>
-          <td>${protein} g</td>
-          <td>${fat} g</td>
-          <td>${carb} g</td>
-          <td>${water} L</td>
-          <td>${salt} g</td>
-          <td>パンプ直前はブドウ糖ラムネ・ゼリー飲料など吸収の早い糖が推奨</td>
-        </tr>
-      </tbody>
-    </table>
-  `;
+  const selector = document.querySelectorAll("select")[index];
+  const condition = selector.value;
+  const [cRate, wRate, sDelta] = getConditionFactors(condition);
+
+  const mealCount = document.querySelectorAll("select").length;
+  const p = Math.round(protein / mealCount);
+  const f = Math.round(fat / mealCount);
+  const c = Math.round((carbs * cRate) / mealCount);
+  const w = ((water * wRate) / mealCount).toFixed(2);
+  const s = ((salt + sDelta) / mealCount).toFixed(2);
+
+  document.getElementById(`pfc${index}`).textContent = `P:${p} F:${f} C:${c}`;
+  document.getElementById(`water${index}`).textContent = `${w}L`;
+  document.getElementById(`salt${index}`).textContent = `${s}g`;
 }
 </script>
-
 </body>
 </html>
